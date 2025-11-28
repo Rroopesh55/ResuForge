@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "ResuForge JD Capturer",
+  "version": "1.0",
+  "description": "Capture Job Descriptions and send to ResuForge.",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
+
