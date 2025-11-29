@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Upload, FileText, Sparkles, Download, Loader2, AlertCircle, Eye, Code, CheckCircle, XCircle, Menu, X } from "lucide-react"
-import Image from "next/image"
 import dynamic from 'next/dynamic'
 import { isDOCX, isPDF } from '@/lib/pdf-utils'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
