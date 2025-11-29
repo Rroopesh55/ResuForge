@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -325,10 +326,13 @@ export default function Dashboard() {
       {/* Sidebar / Navigation */}
       <aside className="w-64 flex flex-col border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-black shadow-sm">
         <div className="p-6 flex items-center gap-3 border-b border-gray-100 dark:border-gray-800">
-          <div className="p-2 bg-gradient-to-br from-purple-600 to-blue-600 rounded-xl shadow-lg">
-            <span className="text-white font-bold text-xl h-6 w-6 flex items-center justify-center">R</span>
-          </div>
-          <span className="font-bold text-lg text-gray-900 dark:text-white">ResuForge</span>
+          <Image
+            src="/resuforge-logo.svg"
+            alt="ResuForge.ai logo"
+            width={140}
+            height={32}
+            priority
+          />
         </div>
         
         <div className="p-4">
