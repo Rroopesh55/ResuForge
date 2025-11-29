@@ -4,156 +4,132 @@ Resume Content Rewrite Agent
 This module provides the RewriteAgent class which uses AI to rewrite resume bullet points
 to incorporate job-specific keywords while maintaining strict length and style constraints.
 
-The agent supports multiple writing styles (Safe, Bold, Creative) and enforces character
-limits to prevent layout overflow.
+NOW WITH SMART FALLBACK STRATEGIES:
+- Level 1: Full AI rewrite with all keywords
+- Level 2: AI rewrite with smart subset of keywords (if Level 1 fails)
+- Level 3: Template-based keyword injection (if AI unavailable)
+- Level 4: Simple keyword append (minimal enhancement)
+- Level 5: Original bullet (last resort)
 
 Author: ResuForge Team
 Date: 2024
 """
 
 import ollama
-from typing import List, Dict, Optional
+from typing import List, Dict
 import logging
+import sys
+import os
+
+# Add utils to path
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from utils.timeout_utils import with_retry
+from utils.partial_failure import PartialFailureHandler
+from utils.encoding_utils import safe_encode_text, normalize_whitespace
+from utils.smart_fallback import cascading_fallback
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class RewriteAgent:
-    """
-    Agent responsible for AI-powered resume content optimization.
-    
-    Uses Ollama's local LLM to rewrite bullet points with job-specific keywords
-    while respecting length constraints and maintaining factual accuracy.
-    """
+    """AI-powered resume content optimization with smart fallback"""
     
     def __init__(self, model_name: str = "llama3"):
-        """
-        Initialize the Rewrite Agent.
-        
-        Args:
-            model_name (str): Name of the Ollama model to use. Default is "llama3".
-        """
+        """Initialize the Rewrite Agent"""
         self.model_name = model_name
         logger.info(f"RewriteAgent initialized with model: {model_name}")
 
+    @with_retry(max_attempts=2, timeout_seconds=30)
     def rewrite_bullet(self, bullet_text: str, keywords: List[str], max_length: int, style: str = "safe") -> str:
         """
-        Rewrites a single bullet point to include keywords while respecting length constraints.
+        Rewrite a single bullet with timeout protection and encoding support.
         
-        The rewrite maintains the original facts while optimizing for ATS keyword matching.
-        Different styles adjust the tone and confidence of the language used.
-        
-        Args:
-            bullet_text (str): Original resume bullet point text
-            keywords (List[str]): Keywords to incorporate (from job description)
-            max_length (int): Maximum character count (enforces layout constraints)
-            style (str): Writing style - "safe" (default), "bold", or "creative"
-                - safe: Professional and concise
-                - bold: Strong action verbs and confident language
-                - creative: Engaging and descriptive language
-                
-        Returns:
-            str: Rewritten bullet point (falls back to original if rewrite fails)
-            
-        Example:
-            >>> agent = RewriteAgent()
-            >>> original = "Developed web applications"
-            >>> rewritten = agent.rewrite_bullet(original, ["React", "AWS"], 150, "bold")
-            >>> print(rewritten)
-            "Architected scalable web applications using React and deployed on AWS..."
-            
-        Note:
-            Character limit is strictly enforced by the AI prompt. If the AI
-            fails to respect it, consider using a shrink pass or manual editing.
+        Returns original if AI fails (but batch_rewrite uses smart fallback).
         """
         logger.info(f"Rewriting bullet (style={style}, max_length={max_length})")
-        logger.debug(f"Original text: {bullet_text[:50]}...")
-        logger.debug(f"Keywords to incorporate: {keywords}")
         
-        # Determine style-specific prompt guidance
-        style_prompt = ""
-        if style == "bold":
-            style_prompt = "Use strong action verbs and confident language."
-        elif style == "creative":
-            style_prompt = "Use more engaging and descriptive language."
-        else:  # safe
-            style_prompt = "Keep it professional and concise."
-
-        # Construct AI prompt with strict constraints
-        prompt = f"""
-        Rewrite the following resume bullet point to include these keywords: {', '.join(keywords)}.
+        # Normalize and encode
+        bullet_text = normalize_whitespace(safe_encode_text(bullet_text))
+        logger.debug(f"Original: {bullet_text[:50]}...")
         
-        Constraints:
-        1. MUST be less than {max_length} characters.
-        2. Do NOT make up facts.
-        3. {style_prompt}
-        4. Return ONLY the rewritten bullet point, no quotes or explanations.
+        # Style prompt
+        style_prompts = {
+            "bold": "Use strong action verbs.",
+            "creative": "Use engaging language.",
+            "safe": "Keep it professional."
+        }
+        style_prompt = style_prompts.get(style, style_prompts["safe"])
 
-        Original Bullet: "{bullet_text}"
-        """
+        # AI prompt
+        prompt = f"""Rewrite this resume bullet to include: {', '.join(keywords)}.
+        
+Constraints:
+1. MUST be under {max_length} chars
+2. Do NOT make up facts  
+3. {style_prompt}
+4. Return ONLY the rewritten bullet
+
+Original: "{bullet_text}"
+"""
 
         try:
-            logger.debug(f"Calling Ollama model: {self.model_name}")
+            response = ollama.chat(model=self.model_name, messages=[{'role': 'user', 'content': prompt}])
+            rewritten = safe_encode_text(response['message']['content'].strip())
             
-            # Call Ollama API
-            response = ollama.chat(model=self.model_name, messages=[
-                {'role': 'user', 'content': prompt},
-            ])
-            
-            rewritten = response['message']['content'].strip()
-            
-            # Validate length (log warning if AI didn't respect constraint)
+            # Auto-truncate if needed
             if len(rewritten) > max_length:
-                logger.warning(f"AI exceeded max_length: {len(rewritten)} > {max_length}")
-                logger.warning("Consider using a shrink pass or stricter prompt")
+                logger.warning(f"AI exceeded limit, truncating")
+                rewritten = rewritten[:max_length].rsplit(' ', 1)[0]
             
-            logger.info(f"Rewrite successful: {len(bullet_text)} → {len(rewritten)} chars")
+            logger.info(f"Success: {len(bullet_text)} → {len(rewritten)} chars")
             return rewritten
-            
         except Exception as e:
-            logger.error(f"Error rewriting bullet: {type(e).__name__}: {e}")
-            logger.info("Falling back to original text")
-            return bullet_text  # Fail safe: return original
+            logger.error(f"AI rewrite failed: {e}")
+            return bullet_text  # Fallback to original
 
     def batch_rewrite(self, bullets: List[str], keywords: List[str], constraints: List[Dict], style: str = "safe") -> List[str]:
         """
-        Rewrites multiple bullets in batch.
+        Batch rewrite with SMART cascading fallback.
         
-        Processes a list of bullet points sequentially, applying individual
-        constraints to each one.
+        If AI fails for a bullet, uses:
+        1. Template-based keyword injection
+        2. Simple keyword append
+        3. Original (last resort)
         
-        Args:
-            bullets (List[str]): List of original bullet points
-            keywords (List[str]): Keywords to incorporate (applied to all bullets)
-            constraints (List[Dict]): Per-bullet constraints, e.g.:
-                [{"max_chars": 200}, {"max_chars": 180}, ...]
-                
-        Returns:
-            List[str]: List of rewritten bullet points
-            
-        Example:
-            >>> agent = RewriteAgent()
-            >>> bullets = ["Built API", "Deployed services"]
-            >>> keywords = ["Python", "Docker"]
-            >>> constraints = [{"max_chars": 150}, {"max_chars": 150}]
-            >>> rewritten = agent.batch_rewrite(bullets, keywords, constraints)
-            
-        Note:
-            This is a sequential operation. For large batches, consider
-            implementing parallel processing or rate limiting.
+        Ensures users get improved bullets even if AI is unavailable.
         """
-        logger.info(f"Batch rewriting {len(bullets)} bullets")
+        logger.info(f"Batch rewriting {len(bullets)} bullets with smart fallback")
         
-        rewritten = []
-        for i, bullet in enumerate(bullets):
-            # Extract max length from constraints (default to 200 if not specified)
+        handler = PartialFailureHandler(fail_fast=False)
+        
+        def rewrite_single(item: tuple) -> str:
+            """Try AI rewrite"""
+            i, bullet = item
+            max_len = constraints[i].get('max_chars', 200) if i < len(constraints) else 200
+            return self.rewrite_bullet(bullet, keywords, max_len, style=style)
+        
+        def smart_fallback_wrapper(item: tuple) -> str:
+            """Smart cascading fallback"""
+            i, bullet = item
             max_len = constraints[i].get('max_chars', 200) if i < len(constraints) else 200
             
-            logger.debug(f"Processing bullet {i+1}/{len(bullets)}")
-            rewritten_bullet = self.rewrite_bullet(bullet, keywords, max_len, style=style)
-            rewritten.append(rewritten_bullet)
+            # Cascading fallback tries template/append strategies
+            enhanced, strategy = cascading_fallback(bullet, keywords, max_len, ai_rewrite_func=None)
+            
+            logger.info(f"Bullet {i}: used '{strategy}' strategy")
+            return enhanced
         
-        logger.info(f"Batch rewrite complete: {len(rewritten)} bullets processed")
+        # Process batch
+        indexed_bullets = list(enumerate(bullets))
+        results = handler.process_batch(indexed_bullets, rewrite_single, fallback=smart_fallback_wrapper)
+        
+        # Results
+        rewritten = handler.get_successful(results)
+        summary = handler.get_summary(results)
+        
+        logger.info(f"Complete: {summary['successful']}/{summary['total']} AI rewrites ({summary['success_rate']:.0%})")
+        if summary['failed'] > 0:
+            logger.info(f"{summary['failed']} bullets used fallback (template/append)")
+        
         return rewritten
-

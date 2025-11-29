@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Resume Writer - AI-Powered Resume Optimization",
-  description: "Optimize your resume with AI-powered analysis and keyword extraction",
+  title: "ResuForge.ai – AI Resume Optimization Without Layout Loss",
+  description: "Improve your resume with ResuForge.ai's AI rewrite, keyword infusion, and layout-safe export workflow.",
 };
 
 export default function RootLayout({

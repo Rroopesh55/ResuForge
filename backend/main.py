@@ -13,6 +13,12 @@ from fastapi import Depends
 from backend import models, crud, database
 from sqlalchemy.orm import Session
 
+# Upload validation
+try:
+    from backend.upload_validators import validate_file_upload, log_upload_stats
+except ModuleNotFoundError:
+    from upload_validators import validate_file_upload, log_upload_stats
+
 try:
     from backend.agents.parser_agent import ParserAgent
     from backend.agents.jd_agent import JDAgent

@@ -15,6 +15,11 @@ from typing import Dict, Any, List
 import docx
 from pypdf import PdfReader
 
+try:
+    from backend.utils.encoding_utils import safe_encode_text, detect_encoding, strip_control_characters
+except ModuleNotFoundError:
+    from utils.encoding_utils import safe_encode_text, detect_encoding, strip_control_characters
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -54,6 +59,8 @@ class ParserAgent:
             1
         """
         logger.info(f"Parsing file: {file_path}")
+        detected_encoding = detect_encoding(file_path)
+        logger.debug(f"Using detected encoding: {detected_encoding}")
         
         ext = os.path.splitext(file_path)[1].lower()
         
@@ -113,7 +120,8 @@ class ParserAgent:
             logger.debug(f"Extracting text from {len(doc.paragraphs)} paragraphs")
             for para in doc.paragraphs:
                 if para.text.strip():
-                    text_content.append(para.text)
+                    cleaned = self._clean_text(para.text)
+                    text_content.append(cleaned)
                     # Attempt to extract font information
                     if para.style and hasattr(para.style, 'font'):
                         if para.style.font.name:
@@ -163,7 +171,7 @@ class ParserAgent:
             logger.debug(f"PDF has {layout_meta['page_count']} pages")
             
             for page_num, page in enumerate(reader.pages):
-                page_text = page.extract_text() or ""
+                page_text = self._clean_text(page.extract_text() or "")
                 text_content.append(page_text)
                 logger.debug(f"Extracted {len(page_text)} characters from page {page_num + 1}")
 
@@ -178,4 +186,14 @@ class ParserAgent:
         except Exception as e:
             logger.error(f"Error parsing PDF file: {str(e)}")
             raise
+
+    def _clean_text(self, text: str) -> str:
+        """
+        Normalize text using the encoding utilities to support international resumes.
+        """
+        if not text:
+            return ""
+        encoded = safe_encode_text(text)
+        stripped = strip_control_characters(encoded)
+        return stripped.strip()
 

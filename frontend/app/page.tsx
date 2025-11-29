@@ -1,11 +1,11 @@
 "use client"
 
 import Link from "next/link"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { 
   ArrowRight, 
-  FileText, 
   CheckCircle, 
   Shield, 
   Sparkles,
@@ -23,29 +23,35 @@ export default function Home() {
   return (
     <div className="flex flex-col min-h-screen bg-white dark:bg-gray-950">
       {/* Header */}
-      <header className="sticky top-0 z-50 px-4 lg:px-6 h-16 flex items-center border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-950/80 backdrop-blur-md">
-        <Link className="flex items-center justify-center" href="#">
-          <div className="p-2 bg-gradient-to-br from-purple-600 to-blue-600 rounded-lg mr-2">
-            <FileText className="h-5 w-5 text-white" />
-          </div>
-          <span className="font-bold text-xl bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">Resume Writer</span>
-        </Link>
-        <nav className="ml-auto flex gap-4 sm:gap-6 items-center">
-          <Link className="text-sm font-medium hover:text-purple-600 transition-colors" href="#features">
-            Features
+      <header className="sticky top-0 z-50 px-4 lg:px-6 h-16 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-950/80 backdrop-blur-md">
+        <div className="flex items-center gap-6 w-full max-w-6xl mx-auto">
+          <Link className="flex items-center justify-center" href="/">
+            <Image
+              src="/resuforge-logo.svg"
+              alt="ResuForge.ai logo"
+              width={150}
+              height={48}
+              className="h-12 w-auto"
+              priority
+            />
           </Link>
-          <Link className="text-sm font-medium hover:text-purple-600 transition-colors" href="#how-it-works">
-            How It Works
-          </Link>
-          <Link className="text-sm font-medium hover:text-purple-600 transition-colors" href="#testimonials">
-            Reviews
-          </Link>
-          <Link href="/dashboard">
-            <Button size="sm" className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg">
-              Get Started
-            </Button>
-          </Link>
-        </nav>
+          <nav className="ml-auto flex gap-4 lg:gap-6 items-center text-sm font-medium">
+            <Link className="hover:text-purple-600 transition-colors" href="#features">
+              Features
+            </Link>
+            <Link className="hover:text-purple-600 transition-colors" href="#how-it-works">
+              How It Works
+            </Link>
+            <Link className="hover:text-purple-600 transition-colors" href="#testimonials">
+              Reviews
+            </Link>
+            <Link href="/dashboard">
+              <Button size="sm" className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg">
+                Get Started
+              </Button>
+            </Link>
+          </nav>
+        </div>
       </header>
 
       <main className="flex-1">
@@ -58,7 +64,7 @@ export default function Home() {
             <div className="absolute top-40 left-1/2 w-80 h-80 bg-indigo-300 dark:bg-indigo-600 rounded-full mix-blend-multiply dark:mix-blend-soft-light filter blur-xl opacity-20 animate-blob animation-delay-4000"></div>
           </div>
 
-          <div className="container relative px-4 md:px-6">
+          <div className="relative mx-auto w-full max-w-6xl px-4 md:px-6 xl:px-12">
             <div className="flex flex-col items-center space-y-8 text-center">
               <div className="space-y-4 max-w-4xl">
                 <div className="inline-flex items-center px-4 py-2 bg-white dark:bg-gray-900 rounded-full shadow-md border border-purple-200 dark:border-purple-800 mb-4">
@@ -113,7 +119,7 @@ export default function Home() {
 
         {/* Features Section */}
         <section id="features" className="w-full py-16 md:py-24 lg:py-32 bg-white dark:bg-gray-950">
-          <div className="container px-4 md:px-6">
+          <div className="mx-auto w-full max-w-6xl px-4 md:px-8 xl:px-12">
             <div className="text-center mb-16">
               <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4">
                 Powerful Features That{" "}
@@ -210,7 +216,7 @@ export default function Home() {
 
         {/* How It Works Section */}
         <section id="how-it-works" className="w-full py-16 md:py-24 lg:py-32 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
-          <div className="container px-4 md:px-6">
+          <div className="mx-auto w-full max-w-6xl px-4 md:px-8 xl:px-12">
             <div className="text-center mb-16">
               <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4">
                 How It Works
@@ -265,7 +271,7 @@ export default function Home() {
 
         {/* Testimonials Section */}
         <section id="testimonials" className="w-full py-16 md:py-24 lg:py-32 bg-white dark:bg-gray-950">
-          <div className="container px-4 md:px-6">
+          <div className="mx-auto w-full max-w-6xl px-4 md:px-8 xl:px-12">
             <div className="text-center mb-16">
               <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4">
                 Loved by{" "}
@@ -353,14 +359,14 @@ export default function Home() {
 
         {/* CTA Section */}
         <section className="w-full py-16 md:py-24 lg:py-32 bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-600">
-          <div className="container px-4 md:px-6">
+          <div className="mx-auto w-full max-w-6xl px-4 md:px-8 xl:px-12">
             <div className="flex flex-col items-center space-y-8 text-center text-white">
               <div className="space-y-4 max-w-3xl">
                 <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold">
                   Ready to Land Your Dream Job?
                 </h2>
                 <p className="text-lg md:text-xl text-white/90">
-                  Join thousands of successful job seekers who've optimized their resumes with Resume Writer
+                  Join thousands of successful job seekers who've optimized their resumes with ResuForge.ai.
                 </p>
               </div>
 
@@ -397,15 +403,19 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="w-full py-12 px-4 md:px-6 bg-gray-950 text-gray-400">
-        <div className="container">
+        <div className="mx-auto w-full max-w-6xl">
           <div className="grid gap-8 md:grid-cols-4">
             {/* Brand */}
             <div className="space-y-3">
               <div className="flex items-center">
-                <div className="p-2 bg-gradient-to-br from-purple-600 to-blue-600 rounded-lg mr-2">
-                  <FileText className="h-5 w-5 text-white" />
-                </div>
-                <span className="font-bold text-lg text-white">Resume Writer</span>
+                <Image
+                  src="/resuforge-logo.svg"
+                  alt="ResuForge.ai logo"
+                  width={150}
+                  height={48}
+                  className="h-12 w-auto"
+                  priority
+                />
               </div>
               <p className="text-sm">
                 AI-powered resume optimization that preserves your formatting.
@@ -448,10 +458,10 @@ export default function Home() {
 
           <div className="mt-12 pt-8 border-t border-gray-800 flex flex-col sm:flex-row justify-between items-center gap-4">
             <p className="text-xs">
-              © 2024 Resume Writer. All rights reserved.
+              © 2024 ResuForge.ai. All rights reserved.
             </p>
             <p className="text-xs">
-              Made with ❤️ for job seekers everywhere
+              Made with ❤️ for job seekers everywhere.
             </p>
           </div>
         </div>

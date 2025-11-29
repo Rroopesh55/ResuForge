@@ -8,9 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Upload, FileText, Sparkles, Download, Save, Loader2, AlertCircle, Eye, Code, CheckCircle, XCircle, ChevronLeft, ChevronRight } from "lucide-react"
+import { Upload, FileText, Sparkles, Download, Loader2, AlertCircle, Eye, Code, CheckCircle, XCircle, Menu, X } from "lucide-react"
+import Image from "next/image"
 import dynamic from 'next/dynamic'
 import { isDOCX, isPDF } from '@/lib/pdf-utils'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 // Dynamically import PDFViewer to avoid SSR issues
 const PDFViewer = dynamic(() => import('@/components/pdf-viewer/PDFViewer'), {
@@ -39,6 +41,8 @@ export default function Dashboard() {
   const [style, setStyle] = useState<'safe' | 'bold' | 'creative'>('safe')
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [validationResults, setValidationResults] = useState<boolean[]>([])
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
   
   // Session History State
   const [sessionFiles, setSessionFiles] = useState<{file: File, timestamp: Date}[]>([])
@@ -81,50 +85,53 @@ export default function Dashboard() {
   }, [keywords, optimizedParagraphs, resumeParagraphs])
 
   const addToHistory = (file: File) => {
-    setSessionFiles(prev => {
-      // Avoid duplicates by name
-      const filtered = prev.filter(f => f.file.name !== file.name)
-      return [{file, timestamp: new Date()}, ...filtered]
+    setSessionFiles((prev) => {
+      const filtered = prev.filter(
+        (entry) => !(entry.file.name === file.name && entry.file.lastModified === file.lastModified)
+      )
+      const next = [{ file, timestamp: new Date() }, ...filtered]
+      return next.slice(0, 10)
     })
   }
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.[0]) return
-    
-    const file = e.target.files[0]
+  const processUploadedFile = async (file: File, options: { skipHistory?: boolean } = {}) => {
     setIsUploading(true)
-    setUploadedFile(isDOCX(file) ? file : null)
-    addToHistory(file)
-    
-    const formData = new FormData()
-    formData.append("file", file)
-
     try {
-      // Parse for text extraction
+      const formData = new FormData()
+      formData.append("file", file)
+
       const res = await fetch("http://localhost:8000/upload", {
         method: "POST",
-        body: formData
+        body: formData,
       })
+
+      if (!res.ok) {
+        throw new Error("Failed to parse resume")
+      }
+
       const data = await res.json()
-      
-      // Store resume_id from database
+
       if (data.resume_id) {
         setCurrentResumeId(data.resume_id)
       }
-      
+
       const paragraphs: string[] = data.raw_content || data.text?.split("\n") || []
       setResumeParagraphs(paragraphs)
       setOptimizedParagraphs(paragraphs)
       setResumeText(paragraphs.join("\n"))
       setValidationResults([])
-      
-      // Handle PDF rendering
+
+      if (!options.skipHistory) {
+        addToHistory(file)
+      }
+      setUploadedFile(file)
+      setPdfFile(null)
+      setViewMode('text')
+
       if (isPDF(file)) {
-        // If already PDF, use directly
         setPdfFile(file)
         setViewMode('pdf')
       } else if (isDOCX(file)) {
-        // Convert DOCX to PDF for rendering
         await convertToPDF(file)
       }
     } catch (err) {
@@ -132,6 +139,13 @@ export default function Dashboard() {
     } finally {
       setIsUploading(false)
     }
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.[0]) return
+    const file = e.target.files[0]
+    await processUploadedFile(file)
+    e.target.value = ""
   }
 
   const convertToPDF = async (file: File) => {
@@ -262,54 +276,9 @@ export default function Dashboard() {
     }
   }
 
-  const handleSaveContent = async (originalText: string, newText: string) => {
-    if (!uploadedFile || !isDOCX(uploadedFile)) return
-    
-    const formData = new FormData()
-    formData.append("file", uploadedFile)
-    formData.append("original_text", originalText)
-    formData.append("new_text", newText)
-    
-    // Include resume_id if available for database tracking
-    if (currentResumeId) {
-      formData.append("resume_id", currentResumeId.toString())
-    }
-    
-    try {
-      // 1. Update the DOCX content
-      const res = await fetch("http://localhost:8000/update-content", {
-        method: "POST",
-        body: formData
-      })
-      
-      if (!res.ok) throw new Error("Failed to update content")
-      
-      const updatedDocxBlob = await res.blob()
-      const updatedFile = new File([updatedDocxBlob], uploadedFile.name, {
-        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        lastModified: new Date().getTime()
-      })
-      
-      // 2. Update local state with new DOCX
-      setUploadedFile(updatedFile)
-      addToHistory(updatedFile)
-      
-      // 3. Convert new DOCX to PDF for viewing
-      await convertToPDF(updatedFile)
-      
-    } catch (err) {
-      console.error("Save failed", err)
-    }
-  }
-  
-  const handleHistoryClick = (file: File) => {
-    setUploadedFile(file)
-    if (isDOCX(file)) {
-        convertToPDF(file)
-    } else if (isPDF(file)) {
-        setPdfFile(file)
-        setViewMode('pdf')
-    }
+  const handleHistoryClick = async (file: File) => {
+    await processUploadedFile(file, { skipHistory: true })
+    setIsSidebarOpen(false)
   }
 
   const canOptimize = resumeParagraphs.length > 0 && keywords.length > 0
@@ -320,59 +289,99 @@ export default function Dashboard() {
     .filter((value): value is number => value !== null)
   const matchedKeywords = keywordCoverage.filter((entry) => entry.count > 0).length
 
-  return (
-    <div className="flex h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900">
-      {/* Sidebar / Navigation */}
-      <aside className="w-64 flex flex-col border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-black shadow-sm">
-        <div className="p-6 flex items-center gap-3 border-b border-gray-100 dark:border-gray-800">
-          <div className="p-2 bg-gradient-to-br from-purple-600 to-blue-600 rounded-xl shadow-lg">
-            <span className="text-white font-bold text-xl h-6 w-6 flex items-center justify-center">R</span>
-          </div>
-          <span className="font-bold text-lg text-gray-900 dark:text-white">ResuForge</span>
+  const sidebarContent = (
+    <div className="flex h-full flex-col">
+      <div className="p-6 flex items-center gap-3 border-b border-gray-100 dark:border-gray-800">
+        <div className="flex items-center">
+          <Image
+            src="/resuforge-logo.svg"
+            alt="ResuForge.ai logo"
+            width={140}
+            height={48}
+            className="h-12 w-auto"
+            priority
+          />
         </div>
-        
-        <div className="p-4">
-            <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-                Session History
-            </h3>
-            <ScrollArea className="h-[calc(100vh-200px)]">
-                <div className="space-y-2">
-                    {sessionFiles.map((file, i) => (
-                        <button
-                            key={i}
-                            onClick={() => handleHistoryClick(file.file)}
-                            className={`w-full text-left p-3 rounded-lg text-sm transition-all duration-200 flex items-start gap-3 ${
-                                uploadedFile?.name === file.file.name && uploadedFile?.lastModified === file.file.lastModified
-                                    ? "bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800"
-                                    : "hover:bg-gray-50 dark:hover:bg-gray-900 text-gray-700 dark:text-gray-300"
-                            }`}
-                        >
-                            <FileText className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                            <div className="overflow-hidden">
-                                <p className="truncate font-medium">{file.file.name}</p>
-                                <p className="text-xs opacity-70">
-                                    {file.timestamp.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                </p>
-                            </div>
-                        </button>
-                    ))}
-                    {sessionFiles.length === 0 && (
-                        <div className="text-center py-8 text-gray-400 dark:text-gray-600 text-sm">
-                            No files uploaded yet
-                        </div>
-                    )}
+        <div className="ml-auto lg:hidden">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setIsSidebarOpen(false)}
+            aria-label="Close sidebar"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+      <div className="flex-1 p-4">
+        <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+          Session History
+        </h3>
+        <ScrollArea className="h-full">
+          <div className="space-y-2">
+            {sessionFiles.map((file, i) => (
+              <button
+                key={`${file.file.name}-${file.file.lastModified}-${i}`}
+                onClick={() => handleHistoryClick(file.file)}
+                className={`w-full text-left p-3 rounded-lg text-sm transition-all duration-200 flex items-start gap-3 ${
+                  uploadedFile?.name === file.file.name && uploadedFile?.lastModified === file.file.lastModified
+                    ? "bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800"
+                    : "hover:bg-gray-50 dark:hover:bg-gray-900 text-gray-700 dark:text-gray-300"
+                }`}
+              >
+                <FileText className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                <div className="overflow-hidden">
+                  <p className="truncate font-medium">{file.file.name}</p>
+                  <p className="text-xs opacity-70">
+                    {file.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </p>
                 </div>
-            </ScrollArea>
-        </div>
-      </aside>
+              </button>
+            ))}
+            {sessionFiles.length === 0 && (
+              <div className="text-center py-8 text-gray-400 dark:text-gray-600 text-sm">No files uploaded yet</div>
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+    </div>
+  )
 
-      {/* Main Content */}
-      <main className="flex-1 flex overflow-hidden flex-col">
-        {/* Top Bar with Home Button */}
-        <header className="h-16 flex items-center justify-between px-6 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
-             <div className="flex items-center gap-4">
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900">
+      <div className="flex min-h-screen flex-col lg:flex-row">
+        {isSidebarOpen && (
+          <>
+            <div
+              className="fixed inset-0 bg-black/50 z-20 lg:hidden"
+              onClick={() => setIsSidebarOpen(false)}
+            />
+            <aside className="fixed inset-y-0 left-0 z-30 w-64 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-black shadow-lg lg:hidden">
+              {sidebarContent}
+            </aside>
+          </>
+        )}
+
+        <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:border-r lg:border-gray-200 lg:dark:border-gray-800 lg:bg-white lg:dark:bg-black lg:shadow-sm">
+          {sidebarContent}
+        </aside>
+
+        {/* Main Content */}
+        <main className="flex-1 flex flex-col">
+          {/* Top Bar */}
+          <header className="flex flex-col gap-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <div className="flex items-center gap-3 flex-wrap">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="lg:hidden"
+                onClick={() => setIsSidebarOpen(true)}
+                aria-label="Open session history"
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Resume Preview</h2>
-              
+
               {/* View Mode Toggle */}
               {resumeText && pdfFile && (
                 <div className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
@@ -396,7 +405,7 @@ export default function Dashboard() {
                   </Button>
                 </div>
               )}
-              
+
               {isConvertingPDF && (
                 <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -404,64 +413,61 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
-            
-            <div className="flex items-center gap-3">
-                 <div className="relative">
-                 <input 
-                   type="file" 
-                   className="absolute inset-0 opacity-0 cursor-pointer z-10" 
-                   onChange={handleFileUpload}
-                   accept=".pdf,.docx,.doc"
-                 />
-                 <Button 
-                   variant="outline" 
-                   size="sm"
-                   disabled={isUploading}
-                   className="relative hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
-                 >
-                   {isUploading ? (
-                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                   ) : (
-                     <Upload className="h-4 w-4 mr-2" />
-                   )}
-                   {isUploading ? "Uploading..." : "Upload"}
-                 </Button>
-               </div>
-               
-               <Button 
+
+            <div className="flex items-center gap-3 flex-wrap justify-end">
+              <div className="relative">
+                <input
+                  type="file"
+                  className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                  onChange={handleFileUpload}
+                  accept=".pdf,.docx,.doc"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isUploading}
+                  className="relative hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
+                >
+                  {isUploading ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4 mr-2" />
+                  )}
+                  {isUploading ? "Uploading..." : "Upload"}
+                </Button>
+              </div>
+
+              <Button
                 size="sm"
                 className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg"
                 disabled={!canExport || isExporting}
-                onClick={() => handleExport("docx")}
+                onClick={() => setIsExportDialogOpen(true)}
               >
                 {isExporting ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
                   <Download className="h-4 w-4 mr-2" />
                 )}
-                {isExporting ? "Exporting..." : "Export DOCX"}
+                {isExporting ? "Preparing..." : "Export"}
               </Button>
-              
-               <Button 
-                 variant="ghost" 
-                 size="sm"
-                 onClick={() => window.location.href = "/"}
-                 className="ml-2"
-               >
-                 Home
-               </Button>
-            </div>
-        </header>
 
-        <div className="flex-1 flex overflow-hidden">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => window.location.href = "/"}
+              >
+                Home
+              </Button>
+            </div>
+          </header>
+
+          <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* Left Pane: Resume Preview (Editable) */}
-        <div className="flex-1 flex flex-col border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
+        <div className="flex-1 flex flex-col bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 lg:border-b-0 lg:border-r lg:border-gray-200 lg:dark:border-gray-800">
           {/* Resume Content - PDF or Text Mode */}
           {viewMode === 'pdf' && pdfFile ? (
             <PDFViewer 
                 file={pdfFile} 
-                onSaveContent={handleSaveContent}
-                // Force re-render when file changes (using timestamp)
                 key={pdfFile.lastModified}
             />
           ) : (
@@ -490,7 +496,7 @@ export default function Dashboard() {
         </div>
 
         {/* Right Pane: AI Controls & JD */}
-        <div className="w-[420px] flex flex-col bg-gray-50 dark:bg-gray-900">
+        <div className="w-full lg:w-[420px] flex flex-col bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 lg:border-t-0">
           <header className="h-16 flex items-center px-6 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
             <h2 className="text-lg font-semibold flex items-center text-gray-900 dark:text-gray-100">
               <div className="p-1.5 bg-purple-100 dark:bg-purple-900/30 rounded-lg mr-3">
@@ -691,5 +697,40 @@ export default function Dashboard() {
         </div>
       </main>
     </div>
-  )
+    <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Select export format</DialogTitle>
+          <DialogDescription>
+            Choose how you want to download the optimized resume. You can export either a DOCX for editing
+            or a ready-to-share PDF.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <Button
+            className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+            disabled={isExporting}
+            onClick={() => {
+              setIsExportDialogOpen(false)
+              handleExport("docx")
+            }}
+          >
+            {isExporting ? "Preparing DOCX..." : "Export as DOCX"}
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full"
+            disabled={isExporting}
+            onClick={() => {
+              setIsExportDialogOpen(false)
+              handleExport("pdf")
+            }}
+          >
+            {isExporting ? "Preparing PDF..." : "Export as PDF"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  </div>
+)
 }
