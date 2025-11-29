@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Upload, FileText, Sparkles, Download, Save, Loader2, AlertCircle, Eye, Code, CheckCircle, XCircle, ChevronLeft, ChevronRight } from "lucide-react"
+import { Upload, FileText, Sparkles, Download, Loader2, AlertCircle, Eye, Code, CheckCircle, XCircle } from "lucide-react"
 import dynamic from 'next/dynamic'
 import { isDOCX, isPDF } from '@/lib/pdf-utils'
 
