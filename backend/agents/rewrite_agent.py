@@ -116,7 +116,7 @@ class RewriteAgent:
             logger.info("Falling back to original text")
             return bullet_text  # Fail safe: return original
 
-    def batch_rewrite(self, bullets: List[str], keywords: List[str], constraints: List[Dict]) -> List[str]:
+    def batch_rewrite(self, bullets: List[str], keywords: List[str], constraints: List[Dict], style: str = "safe") -> List[str]:
         """
         Rewrites multiple bullets in batch.
         
@@ -151,7 +151,7 @@ class RewriteAgent:
             max_len = constraints[i].get('max_chars', 200) if i < len(constraints) else 200
             
             logger.debug(f"Processing bullet {i+1}/{len(bullets)}")
-            rewritten_bullet = self.rewrite_bullet(bullet, keywords, max_len)
+            rewritten_bullet = self.rewrite_bullet(bullet, keywords, max_len, style=style)
             rewritten.append(rewritten_bullet)
         
         logger.info(f"Batch rewrite complete: {len(rewritten)} bullets processed")

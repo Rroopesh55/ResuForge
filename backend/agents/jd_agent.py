@@ -13,9 +13,11 @@ Date: 2024
 """
 
 import ollama
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import json
 import logging
+import re
+from collections import Counter
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,6 +31,24 @@ class JDAgent:
     structured data that can be used for resume optimization.
     """
     
+    STOPWORDS = {
+        "the", "and", "for", "with", "that", "this", "will", "you", "are",
+        "our", "your", "have", "has", "from", "who", "they", "their", "his",
+        "her", "she", "him", "its", "but", "not", "all", "any", "per",
+        "into", "about", "across", "within", "able", "must", "should",
+        "experience", "years", "team", "work", "working", "skills", "job",
+        "responsibilities", "ability", "including", "such", "role", "project",
+    }
+
+    KNOWN_SKILLS = [
+        "python", "javascript", "typescript", "java", "c++", "c#", "go", "rust",
+        "sql", "nosql", "aws", "azure", "gcp", "react", "vue", "angular", "node",
+        "docker", "kubernetes", "terraform", "ci/cd", "rest", "graphql",
+        "machine learning", "data analysis", "excel", "salesforce", "figma",
+        "adobe", "power bi", "pandas", "numpy", "tensorflow", "pytorch",
+        "spark", "hadoop", "linux", "git", "jira", "confluence",
+    ]
+
     def __init__(self, model_name: str = "llama3"):
         """
         Initialize the JD Intelligence Agent.
@@ -115,25 +135,69 @@ class JDAgent:
             logger.info(f"Successfully analyzed JD - Found {len(result.get('skills', []))} skills, "
                        f"{len(result.get('keywords', []))} keywords")
             
+            if not result.get("keywords"):
+                logger.info("LLM returned no keywords, using heuristic fallback")
+                return self._fallback_analysis(jd_text, seed=result)
+
             return result
             
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse LLM response as JSON: {e}")
             logger.debug(f"Raw LLM response: {content[:200]}...")
-            # Return empty structure on JSON parse failure
-            return {
-                "skills": [],
-                "experience_years": None,
-                "keywords": [],
-                "summary": "Error: Could not parse JD analysis"
-            }
+            return self._fallback_analysis(jd_text)
         except Exception as e:
             logger.error(f"Error analyzing JD: {type(e).__name__}: {e}")
-            # Fallback on any other error
-            return {
-                "skills": [],
-                "experience_years": None,
-                "keywords": [],
-                "summary": "Error analyzing JD"
-            }
+            return self._fallback_analysis(jd_text)
+
+    def _fallback_analysis(self, jd_text: str, seed: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        """
+        Simple heuristic-based analysis when the LLM is unavailable.
+        """
+        logger.info("Running heuristic fallback JD analysis")
+        normalized = jd_text.lower()
+
+        keywords = self._extract_keywords(normalized, max_keywords=12)
+        skills = self._extract_skills(normalized)
+        summary = self._summarize(jd_text)
+
+        result = {
+            "skills": skills,
+            "experience_years": self._extract_experience_years(normalized),
+            "keywords": keywords,
+            "summary": summary,
+        }
+
+        if seed:
+            result.setdefault("skills", seed.get("skills") or skills)
+            result.setdefault("summary", seed.get("summary") or summary)
+            if not result.get("keywords"):
+                result["keywords"] = keywords
+        return result
+
+    def _extract_keywords(self, text: str, max_keywords: int = 10) -> List[str]:
+        tokens = re.findall(r"[a-z0-9+#/.]+", text)
+        filtered = [token for token in tokens if token not in self.STOPWORDS and len(token) > 2]
+        freq = Counter(filtered)
+        return [word for word, _ in freq.most_common(max_keywords)]
+
+    def _extract_skills(self, text: str) -> List[str]:
+        found = []
+        for skill in self.KNOWN_SKILLS:
+            if skill in text:
+                found.append(skill.title())
+        return found
+
+    def _extract_experience_years(self, text: str) -> Optional[int]:
+        match = re.search(r"(\d+)\+?\s+years?", text)
+        if match:
+            try:
+                return int(match.group(1))
+            except ValueError:
+                return None
+        return None
+
+    def _summarize(self, text: str, max_sentences: int = 2) -> str:
+        sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+        summary_sentences = sentences[:max_sentences]
+        return " ".join(summary_sentences) if summary_sentences else text[:200]
 

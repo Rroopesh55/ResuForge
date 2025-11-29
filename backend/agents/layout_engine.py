@@ -12,7 +12,8 @@ Author: ResuForge Team
 Date: 2024
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Iterable, Tuple
+from collections import defaultdict, deque
 import docx
 from docx.shared import Pt, Inches
 import logging
@@ -72,7 +73,12 @@ class LayoutEngine:
         
         return is_valid
 
-    def reconstruct_docx(self, original_path: str, output_path: str, replacements: Dict[str, str]):
+    def reconstruct_docx(
+        self,
+        original_path: str,
+        output_path: str,
+        replacements: Iterable[Tuple[str, str]] | Dict[str, str],
+    ):
         """
         Replaces text in the original DOCX while preserving styles.
         
@@ -99,43 +105,60 @@ class LayoutEngine:
             For complex formatting preservation, consider using python-docx's
             run-level manipulation or format cloning.
         """
-        logger.info(f"Reconstructing DOCX: {original_path} → {output_path}")
-        logger.debug(f"Applying {len(replacements)} text replacements")
+        normalized: List[Tuple[str, str]] = []
+        if isinstance(replacements, dict):
+            normalized = [(orig, replacements[orig]) for orig in replacements]
+        else:
+            for item in replacements or []:
+                if isinstance(item, dict):
+                    original_text = item.get("original")
+                    new_text = item.get("replacement", "")
+                else:
+                    original_text, new_text = item
+                if original_text is None:
+                    continue
+                normalized.append((original_text, new_text or ""))
+
+        logger.info(f"Reconstructing DOCX: {original_path} -> {output_path}")
+        logger.debug(f"Applying {len(normalized)} text replacements")
         
         try:
-            # Load original document
             doc = docx.Document(original_path)
             replacements_applied = 0
 
-            # Iterate through paragraphs
-            for para in doc.paragraphs:
-                if para.text in replacements:
-                    # Found a matching paragraph
-                    target_text = para.text
-                    new_text = replacements[target_text]
-                    
-                    logger.debug(f"Replacing paragraph: '{target_text[:30]}...' → '{new_text[:30]}...'")
-                    
-                    # Simple replacement (preserves some formatting but not all)
-                    # Better approach: Replace text within runs to preserve styling
-                    if len(para.runs) > 0:
-                        para.runs[0].text = new_text
-                        # Clear other runs to avoid duplicate text
-                        for run in para.runs[1:]:
-                            run.text = ""
-                    else:
-                        # Fallback if no runs exist
-                        para.text = new_text
-                    
-                    replacements_applied += 1
+            replacement_map: Dict[str, deque[str]] = defaultdict(deque)
+            for original_text, new_text in normalized:
+                replacement_map[original_text].append(new_text)
 
-            # Save modified document
+            for para in doc.paragraphs:
+                if para.text not in replacement_map:
+                    continue
+                
+                if not replacement_map[para.text]:
+                    continue
+
+                new_text = replacement_map[para.text].popleft()
+                logger.debug(f"Replacing paragraph: '{para.text[:30]}...' -> '{new_text[:30]}...'")
+
+                if para.runs:
+                    para.runs[0].text = new_text
+                    for run in para.runs[1:]:
+                        run.text = ""
+                else:
+                    para.text = new_text
+
+                replacements_applied += 1
+
             doc.save(output_path)
-            logger.info(f"DOCX reconstruction complete: {replacements_applied}/{len(replacements)} replacements applied")
+            logger.info(
+                f"DOCX reconstruction complete: {replacements_applied}/{len(normalized)} replacements applied"
+            )
             
-            if replacements_applied < len(replacements):
-                logger.warning(f"Not all replacements were applied: {replacements_applied}/{len(replacements)}")
-                logger.warning("Some paragraphs may not have exact text matches")
+            if replacements_applied < len(normalized):
+                logger.warning(
+                    f"Not all replacements were applied: {replacements_applied}/{len(normalized)}"
+                )
+                logger.warning("Some paragraphs may not have exact text matches or remain unprocessed")
                 
         except Exception as e:
             logger.error(f"DOCX reconstruction failed: {type(e).__name__}: {e}")

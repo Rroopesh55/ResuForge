@@ -1,0 +1,10 @@
+# Test Requirements
+
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+python-docx>=0.8.11
+
+# Note: Some tests require Ollama running locally
+# Integration tests are marked with @pytest.mark.skip
+# Run integration tests with: pytest -m "not skip"

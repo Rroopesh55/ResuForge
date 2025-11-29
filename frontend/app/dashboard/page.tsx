@@ -1,13 +1,14 @@
+
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Upload, FileText, Sparkles, Download, Save, Loader2, AlertCircle, Eye, Code } from "lucide-react"
+import { Upload, FileText, Sparkles, Download, Save, Loader2, AlertCircle, Eye, Code, CheckCircle, XCircle, ChevronLeft, ChevronRight } from "lucide-react"
 import dynamic from 'next/dynamic'
 import { isDOCX, isPDF } from '@/lib/pdf-utils'
 
@@ -31,7 +32,20 @@ export default function Dashboard() {
   const [pdfFile, setPdfFile] = useState<File | null>(null)
   const [viewMode, setViewMode] = useState<'text' | 'pdf'>('text')
   const [isConvertingPDF, setIsConvertingPDF] = useState(false)
+  const [resumeParagraphs, setResumeParagraphs] = useState<string[]>([])
+  const [optimizedParagraphs, setOptimizedParagraphs] = useState<string[]>([])
+  const [isOptimizing, setIsOptimizing] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+  const [style, setStyle] = useState<'safe' | 'bold' | 'creative'>('safe')
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [validationResults, setValidationResults] = useState<boolean[]>([])
   
+  // Session History State
+  const [sessionFiles, setSessionFiles] = useState<{file: File, timestamp: Date}[]>([])
+  
+  // Database State
+  const [currentResumeId, setCurrentResumeId] = useState<number | null>(null)
+
   useEffect(() => {
     const jdParam = searchParams.get("jd")
     if (jdParam) {
@@ -39,11 +53,49 @@ export default function Dashboard() {
     }
   }, [searchParams])
 
+  const buildConstraints = (paragraphs: string[]) => {
+    return paragraphs.map((para) => ({
+      max_chars: Math.max(para.length + 20, 140),
+    }))
+  }
+
+  const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+  const keywordCoverage = useMemo(() => {
+    if (!keywords.length) return []
+    const sourceParagraphs = (optimizedParagraphs.length ? optimizedParagraphs : resumeParagraphs).join(" \n")
+    const normalizedSource = sourceParagraphs.toLowerCase()
+
+    return keywords.map((keyword) => {
+      const normalizedKeyword = keyword.trim()
+      if (!normalizedKeyword) {
+        return { keyword, count: 0 }
+      }
+      const pattern = new RegExp(`\\b${escapeRegExp(normalizedKeyword.toLowerCase())}\\b`, "g")
+      const matches = normalizedSource.match(pattern)
+      return {
+        keyword,
+        count: matches ? matches.length : 0,
+      }
+    })
+  }, [keywords, optimizedParagraphs, resumeParagraphs])
+
+  const addToHistory = (file: File) => {
+    setSessionFiles(prev => {
+      // Avoid duplicates by name
+      const filtered = prev.filter(f => f.file.name !== file.name)
+      return [{file, timestamp: new Date()}, ...filtered]
+    })
+  }
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0]) return
     
     const file = e.target.files[0]
     setIsUploading(true)
+    setUploadedFile(isDOCX(file) ? file : null)
+    addToHistory(file)
+    
     const formData = new FormData()
     formData.append("file", file)
 
@@ -54,7 +106,17 @@ export default function Dashboard() {
         body: formData
       })
       const data = await res.json()
-      setResumeText(data.text)
+      
+      // Store resume_id from database
+      if (data.resume_id) {
+        setCurrentResumeId(data.resume_id)
+      }
+      
+      const paragraphs: string[] = data.raw_content || data.text?.split("\n") || []
+      setResumeParagraphs(paragraphs)
+      setOptimizedParagraphs(paragraphs)
+      setResumeText(paragraphs.join("\n"))
+      setValidationResults([])
       
       // Handle PDF rendering
       if (isPDF(file)) {
@@ -86,8 +148,11 @@ export default function Dashboard() {
       if (!res.ok) throw new Error("PDF conversion failed")
       
       const pdfBlob = await res.blob()
-      const pdfFile = new File([pdfBlob], file.name.replace(/\.[^/.]+$/, ".pdf"), {
-        type: 'application/pdf'
+      // Add timestamp to filename to avoid caching issues in PDF viewer
+      const timestamp = new Date().getTime()
+      const pdfFile = new File([pdfBlob], `${file.name.replace(/\.[^/.]+$/, "")}_${timestamp}.pdf`, {
+        type: 'application/pdf',
+        lastModified: timestamp
       })
       
       setPdfFile(pdfFile)
@@ -120,37 +185,192 @@ export default function Dashboard() {
     }
   }
 
+  const handleOptimizeContent = async () => {
+    if (!resumeParagraphs.length || !keywords.length) return
+    setIsOptimizing(true)
+    try {
+      const constraints = buildConstraints(resumeParagraphs)
+      const bulletsForRewrite = optimizedParagraphs.length ? optimizedParagraphs : resumeParagraphs
+      const res = await fetch("http://localhost:8000/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bullets: bulletsForRewrite,
+          keywords,
+          constraints,
+          style,
+        }),
+      })
+      if (!res.ok) throw new Error("Optimization failed")
+      const data = await res.json()
+      const rewritten = data.rewritten_bullets || optimizedParagraphs
+      setOptimizedParagraphs(rewritten)
+      setResumeText(rewritten.join("\n"))
+      setValidationResults(data.validation || [])
+    } catch (err) {
+      console.error("Optimization failed", err)
+    } finally {
+      setIsOptimizing(false)
+    }
+  }
+
+  const handleExport = async (format: "docx" | "pdf") => {
+    if (!uploadedFile || !isDOCX(uploadedFile) || !resumeParagraphs.length) return
+    setIsExporting(true)
+    try {
+      const formData = new FormData()
+      formData.append("file", uploadedFile)
+      formData.append("bullets_json", JSON.stringify(resumeParagraphs))
+      formData.append("constraints_json", JSON.stringify(buildConstraints(resumeParagraphs)))
+      const finalBullets = optimizedParagraphs.length ? optimizedParagraphs : resumeParagraphs
+      formData.append("keywords_json", JSON.stringify(keywords))
+      formData.append("style", style)
+      formData.append("output_format", format)
+      formData.append("final_bullets_json", JSON.stringify(finalBullets))
+
+      const res = await fetch("http://localhost:8000/optimize-and-export", {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!res.ok) throw new Error("Export failed")
+      const validationHeader = res.headers.get("x-validation-results")
+      if (validationHeader) {
+        try {
+          const parsed = JSON.parse(validationHeader)
+          if (Array.isArray(parsed)) {
+            setValidationResults(parsed)
+          }
+        } catch (err) {
+          console.warn("Failed to parse validation header", err)
+        }
+      }
+
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = format === "pdf" ? "resume_optimized.pdf" : "resume_optimized.docx"
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error("Export failed", err)
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const handleSaveContent = async (originalText: string, newText: string) => {
+    if (!uploadedFile || !isDOCX(uploadedFile)) return
+    
+    const formData = new FormData()
+    formData.append("file", uploadedFile)
+    formData.append("original_text", originalText)
+    formData.append("new_text", newText)
+    
+    // Include resume_id if available for database tracking
+    if (currentResumeId) {
+      formData.append("resume_id", currentResumeId.toString())
+    }
+    
+    try {
+      // 1. Update the DOCX content
+      const res = await fetch("http://localhost:8000/update-content", {
+        method: "POST",
+        body: formData
+      })
+      
+      if (!res.ok) throw new Error("Failed to update content")
+      
+      const updatedDocxBlob = await res.blob()
+      const updatedFile = new File([updatedDocxBlob], uploadedFile.name, {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        lastModified: new Date().getTime()
+      })
+      
+      // 2. Update local state with new DOCX
+      setUploadedFile(updatedFile)
+      addToHistory(updatedFile)
+      
+      // 3. Convert new DOCX to PDF for viewing
+      await convertToPDF(updatedFile)
+      
+    } catch (err) {
+      console.error("Save failed", err)
+    }
+  }
+  
+  const handleHistoryClick = (file: File) => {
+    setUploadedFile(file)
+    if (isDOCX(file)) {
+        convertToPDF(file)
+    } else if (isPDF(file)) {
+        setPdfFile(file)
+        setViewMode('pdf')
+    }
+  }
+
+  const canOptimize = resumeParagraphs.length > 0 && keywords.length > 0
+  const canExport = uploadedFile !== null && isDOCX(uploadedFile) && resumeParagraphs.length > 0
+  const validCount = validationResults.filter(Boolean).length
+  const invalidIndices = validationResults
+    .map((isValid, idx) => (isValid ? null : idx + 1))
+    .filter((value): value is number => value !== null)
+  const matchedKeywords = keywordCoverage.filter((entry) => entry.count > 0).length
+
   return (
     <div className="flex h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900">
       {/* Sidebar / Navigation */}
-      <aside className="w-20 flex flex-col items-center py-6 bg-white dark:bg-black border-r border-gray-200 dark:border-gray-800 shadow-sm">
-        <div className="p-3 bg-gradient-to-br from-purple-600 to-blue-600 rounded-xl mb-8 shadow-lg">
-          <FileText className="text-white h-6 w-6" />
+      <aside className="w-64 flex flex-col border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-black shadow-sm">
+        <div className="p-6 flex items-center gap-3 border-b border-gray-100 dark:border-gray-800">
+          <div className="p-2 bg-gradient-to-br from-purple-600 to-blue-600 rounded-xl shadow-lg">
+            <span className="text-white font-bold text-xl h-6 w-6 flex items-center justify-center">R</span>
+          </div>
+          <span className="font-bold text-lg text-gray-900 dark:text-white">ResuForge</span>
         </div>
-        <nav className="flex flex-col gap-3">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="rounded-xl bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-all duration-200"
-          >
-            <FileText className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-          </Button>
-          <Button 
-            variant="ghost" 
-            size="icon"
-            className="rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200"
-          >
-            <Save className="h-5 w-5 text-gray-500 dark:text-gray-400" />
-          </Button>
-        </nav>
+        
+        <div className="p-4">
+            <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+                Session History
+            </h3>
+            <ScrollArea className="h-[calc(100vh-200px)]">
+                <div className="space-y-2">
+                    {sessionFiles.map((file, i) => (
+                        <button
+                            key={i}
+                            onClick={() => handleHistoryClick(file.file)}
+                            className={`w-full text-left p-3 rounded-lg text-sm transition-all duration-200 flex items-start gap-3 ${
+                                uploadedFile?.name === file.file.name && uploadedFile?.lastModified === file.file.lastModified
+                                    ? "bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800"
+                                    : "hover:bg-gray-50 dark:hover:bg-gray-900 text-gray-700 dark:text-gray-300"
+                            }`}
+                        >
+                            <FileText className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                            <div className="overflow-hidden">
+                                <p className="truncate font-medium">{file.file.name}</p>
+                                <p className="text-xs opacity-70">
+                                    {file.timestamp.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                </p>
+                            </div>
+                        </button>
+                    ))}
+                    {sessionFiles.length === 0 && (
+                        <div className="text-center py-8 text-gray-400 dark:text-gray-600 text-sm">
+                            No files uploaded yet
+                        </div>
+                    )}
+                </div>
+            </ScrollArea>
+        </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex overflow-hidden">
-        {/* Left Pane: Resume Preview (Editable) */}
-        <div className="flex-1 flex flex-col border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
-          <header className="h-16 flex items-center justify-between px-6 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
-            <div className="flex items-center gap-4">
+      <main className="flex-1 flex overflow-hidden flex-col">
+        {/* Top Bar with Home Button */}
+        <header className="h-16 flex items-center justify-between px-6 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
+             <div className="flex items-center gap-4">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Resume Preview</h2>
               
               {/* View Mode Toggle */}
@@ -184,9 +404,9 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
-           
-            <div className="flex gap-3">
-               <div className="relative">
+            
+            <div className="flex items-center gap-3">
+                 <div className="relative">
                  <input 
                    type="file" 
                    className="absolute inset-0 opacity-0 cursor-pointer z-10" 
@@ -207,19 +427,43 @@ export default function Dashboard() {
                    {isUploading ? "Uploading..." : "Upload"}
                  </Button>
                </div>
-              <Button 
+               
+               <Button 
                 size="sm"
                 className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg"
-                disabled={!resumeText}
+                disabled={!canExport || isExporting}
+                onClick={() => handleExport("docx")}
               >
-                <Download className="h-4 w-4 mr-2" /> Export
+                {isExporting ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
+                {isExporting ? "Exporting..." : "Export DOCX"}
               </Button>
+              
+               <Button 
+                 variant="ghost" 
+                 size="sm"
+                 onClick={() => window.location.href = "/"}
+                 className="ml-2"
+               >
+                 Home
+               </Button>
             </div>
-          </header>
-          
+        </header>
+
+        <div className="flex-1 flex overflow-hidden">
+        {/* Left Pane: Resume Preview (Editable) */}
+        <div className="flex-1 flex flex-col border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
           {/* Resume Content - PDF or Text Mode */}
           {viewMode === 'pdf' && pdfFile ? (
-            <PDFViewer file={pdfFile} />
+            <PDFViewer 
+                file={pdfFile} 
+                onSaveContent={handleSaveContent}
+                // Force re-render when file changes (using timestamp)
+                key={pdfFile.lastModified}
+            />
           ) : (
             <ScrollArea className="flex-1 p-8">
               {resumeText ? (
@@ -314,7 +558,7 @@ export default function Dashboard() {
                     <CardTitle className="text-base text-gray-900 dark:text-gray-100">Extracted Keywords</CardTitle>
                     <CardDescription className="text-sm">
                       {keywords.length > 0 
-                        ? `Found ${keywords.length} important keyword${keywords.length !== 1 ? 's' : ''}`
+                        ? `Matched ${matchedKeywords} of ${keywords.length} keywords in the current resume`
                         : "No keywords extracted yet"
                       }
                     </CardDescription>
@@ -322,17 +566,38 @@ export default function Dashboard() {
                   <CardContent>
                     {keywords.length > 0 ? (
                       <div className="space-y-3">
-                        <div className="p-4 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-                          <div className="flex flex-wrap gap-2">
-                            {keywords.map((k, i) => (
-                              <span 
-                                key={i} 
-                                className="px-3 py-1.5 bg-white dark:bg-gray-950 text-green-700 dark:text-green-400 rounded-md border border-green-200 dark:border-green-800 text-xs font-medium shadow-sm hover:shadow transition-shadow"
+                        <div className="p-4 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm text-green-900 dark:text-green-200">
+                          {matchedKeywords === keywords.length
+                            ? "Every extracted keyword already appears in your resume."
+                            : matchedKeywords > 0
+                              ? `${matchedKeywords} keyword${matchedKeywords === 1 ? " is" : "s are"} present. Update the missing ones below to improve ATS alignment.`
+                              : "No keywords found in the current resume yet. Optimize your bullets or edit manually to include them."}
+                        </div>
+                        <div className="space-y-2">
+                          {keywordCoverage.map(({ keyword, count }, index) => (
+                            <div
+                              key={`${keyword}-${index}`}
+                              className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-800 px-3 py-2"
+                            >
+                              <div className="flex items-center gap-2 text-sm">
+                                {count > 0 ? (
+                                  <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+                                ) : (
+                                  <XCircle className="h-4 w-4 text-amber-500 dark:text-amber-400" />
+                                )}
+                                <span className="text-gray-900 dark:text-gray-100">{keyword}</span>
+                              </div>
+                              <span
+                                className={`text-xs font-medium ${
+                                  count > 0
+                                    ? "text-green-700 dark:text-green-300"
+                                    : "text-amber-700 dark:text-amber-300"
+                                }`}
                               >
-                                {k}
+                                {count > 0 ? `${count} match${count > 1 ? "es" : ""}` : "Missing"}
                               </span>
-                            ))}
-                          </div>
+                            </div>
+                          ))}
                         </div>
                         <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                           <AlertCircle className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
@@ -358,10 +623,73 @@ export default function Dashboard() {
                 </Card>
               </TabsContent>
             </Tabs>
+
+            <Card className="border-gray-200 dark:border-gray-800 shadow-sm mt-6">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base text-gray-900 dark:text-gray-100">Optimization Controls</CardTitle>
+                <CardDescription className="text-sm">
+                  Adjust writing style, run optimizations, and export the reconstructed resume.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Writing Style</label>
+                  <select
+                    value={style}
+                    onChange={(e) => setStyle(e.target.value as 'safe' | 'bold' | 'creative')}
+                    className="w-full rounded-md border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+                  >
+                    <option value="safe">Safe · Professional</option>
+                    <option value="bold">Bold · Assertive</option>
+                    <option value="creative">Creative · Descriptive</option>
+                  </select>
+                </div>
+                <Button
+                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50"
+                  onClick={handleOptimizeContent}
+                  disabled={!canOptimize || isOptimizing}
+                >
+                  {isOptimizing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Optimizing...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      Optimize Bullets
+                    </>
+                  )}
+                </Button>
+                {validationResults.length > 0 && (
+                  <div
+                    className={`text-xs rounded-md border px-3 py-2 ${
+                      invalidIndices.length === 0
+                        ? "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300"
+                        : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
+                    }`}
+                  >
+                    {invalidIndices.length === 0 ? (
+                      <span>All {validationResults.length} bullets satisfied the layout constraints.</span>
+                    ) : (
+                      <span>
+                        {validCount}/{validationResults.length} bullets fit the constraints. Bullets{" "}
+                        {invalidIndices.join(", ")} reverted to their originals to prevent overflow.
+                      </span>
+                    )}
+                  </div>
+                )}
+                {!canExport && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Upload a DOCX resume to enable export. PDF uploads can still be optimized but cannot be reconstructed automatically.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
           </div>
+        </div>
         </div>
       </main>
     </div>
   )
 }
-

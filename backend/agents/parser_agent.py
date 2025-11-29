@@ -163,7 +163,7 @@ class ParserAgent:
             logger.debug(f"PDF has {layout_meta['page_count']} pages")
             
             for page_num, page in enumerate(reader.pages):
-                page_text = page.extract_text()
+                page_text = page.extract_text() or ""
                 text_content.append(page_text)
                 logger.debug(f"Extracted {len(page_text)} characters from page {page_num + 1}")
 

@@ -5,12 +5,6 @@
  * The worker is required for PDF.js to parse PDFs in a background thread.
  */
 
-import { pdfjs } from 'react-pdf'
-
-// Configure PDF.js worker
-// This uses the CDN-hosted worker which is simpler than bundling it
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`
-
 /**
  * Converts a File object to a data URL for PDF.js
  */
