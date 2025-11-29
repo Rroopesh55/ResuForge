@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { SingleSignOnDialog } from "@/components/auth/single-sign-on-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { 
@@ -40,6 +41,7 @@ export default function Home() {
           <Link className="text-sm font-medium hover:text-purple-600 transition-colors" href="#testimonials">
             Reviews
           </Link>
+          <SingleSignOnDialog />
           <Link href="/dashboard">
             <Button size="sm" className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg">
               Get Started
@@ -135,7 +137,7 @@ export default function Home() {
                   </div>
                   <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">Layout Protection</h3>
                   <p className="text-gray-600 dark:text-gray-400">
-                    Our "Iron Rules" engine ensures your margins, fonts, and page count never change. Your design stays perfect.
+                    Our “Iron Rules” engine ensures your margins, fonts, and page count never change. Your design stays perfect.
                   </p>
                 </CardContent>
               </Card>
@@ -288,7 +290,7 @@ export default function Home() {
                     ))}
                   </div>
                   <p className="text-gray-700 dark:text-gray-300 italic">
-                    "Finally! A tool that actually keeps my resume formatting intact. Got past the ATS and landed 3 interviews in one week!"
+                    “Finally! A tool that actually keeps my resume formatting intact. Got past the ATS and landed 3 interviews in one week!”
                   </p>
                   <div className="flex items-center gap-3 pt-2">
                     <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-blue-400 rounded-full flex items-center justify-center text-white font-bold">
@@ -311,7 +313,7 @@ export default function Home() {
                     ))}
                   </div>
                   <p className="text-gray-700 dark:text-gray-300 italic">
-                    "The privacy aspect is huge for me. No more uploading my resume to random websites. Everything stays local!"
+                    “The privacy aspect is huge for me. No more uploading my resume to random websites. Everything stays local!”
                   </p>
                   <div className="flex items-center gap-3 pt-2">
                     <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-indigo-400 rounded-full flex items-center justify-center text-white font-bold">
@@ -334,7 +336,7 @@ export default function Home() {
                     ))}
                   </div>
                   <p className="text-gray-700 dark:text-gray-300 italic">
-                    "Saved me hours of manual keyword optimization. The AI is smart enough to make it sound natural, not stuffed."
+                    “Saved me hours of manual keyword optimization. The AI is smart enough to make it sound natural, not stuffed.”
                   </p>
                   <div className="flex items-center gap-3 pt-2">
                     <div className="w-10 h-10 bg-gradient-to-br from-indigo-400 to-purple-400 rounded-full flex items-center justify-center text-white font-bold">
@@ -360,7 +362,7 @@ export default function Home() {
                   Ready to Land Your Dream Job?
                 </h2>
                 <p className="text-lg md:text-xl text-white/90">
-                  Join thousands of successful job seekers who've optimized their resumes with Resume Writer
+                  Join thousands of successful job seekers who’ve optimized their resumes with Resume Writer
                 </p>
               </div>
 

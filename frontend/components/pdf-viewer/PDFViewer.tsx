@@ -22,13 +22,22 @@
 
 "use client"
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 import { Button } from '@/components/ui/button'
 import { ChevronLeft, ChevronRight, Loader2, AlertCircle } from 'lucide-react'
 import EditableOverlay, { TextItem } from './EditableOverlay'
 import TextEditDialog from './TextEditDialog'
+
+type PageMetadata = {
+  originalWidth: number
+  originalHeight: number
+}
+
+type TextLayerContent = {
+  items: TextItem[]
+}
 
 // Types
 interface PDFViewerProps {
@@ -100,7 +109,7 @@ export default function PDFViewer({ file, onLoadSuccess, onLoadError, onSaveCont
   /**
    * Handle Page load success to get dimensions
    */
-  const handlePageLoadSuccess = (page: any) => {
+  const handlePageLoadSuccess = (page: PageMetadata) => {
     // Calculate scale based on rendered width vs original width
     // We force width=794 (A4 at 96 DPI), so scale is 794 / originalWidth
     // But page.width is the *rendered* width if we passed width prop?
@@ -116,7 +125,7 @@ export default function PDFViewer({ file, onLoadSuccess, onLoadError, onSaveCont
   /**
    * Capture text items for overlay
    */
-  const handleTextLayerSuccess = (textContent: any) => {
+  const handleTextLayerSuccess = (textContent: TextLayerContent) => {
     setTextItems(textContent.items)
   }
 
