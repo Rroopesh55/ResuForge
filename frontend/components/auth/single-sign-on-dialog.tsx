@@ -49,6 +49,7 @@ export function SingleSignOnDialog() {
     }
     return getInitialUsers()
   })
+  const [hasHydrated, setHasHydrated] = useState(false)
   const [existingEmail, setExistingEmail] = useState("")
   const [existingStatus, setExistingStatus] = useState<FormStatus>({ status: "idle" })
   const [newUser, setNewUser] = useState({
@@ -60,10 +61,19 @@ export function SingleSignOnDialog() {
   const [creationStatus, setCreationStatus] = useState<FormStatus>({ status: "idle" })
 
   useEffect(() => {
-    if (users.length) {
+    const stored = readFromStorage()
+    if (stored) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setUsers(stored)
+    }
+    setHasHydrated(true)
+  }, [])
+
+  useEffect(() => {
+    if (hasHydrated && users.length) {
       persistUsers(users)
     }
-  }, [users])
+  }, [hasHydrated, users])
 
   const totalCompanies = useMemo(() => new Set(users.map((user) => user.company)).size, [users])
 
